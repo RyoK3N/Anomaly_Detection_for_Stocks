@@ -1,20 +1,20 @@
 # ./services/model.py
 
+import logging
 import os
+from typing import Tuple
+
+import joblib
+import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import numpy as np
-import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
-from typing import Tuple
-import yfinance as yf
 from data_loader import load_real_time_data
 from preprocess import preprocess_data
+from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import DataLoader, TensorDataset, random_split
-import joblib
 from tqdm import tqdm
-import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +28,7 @@ class VectorQuantizer(nn.Module):
     def __init__(self, num_embeddings: int, embedding_dim: int, commitment_cost: float):
         """
         Initializes the Vector Quantizer.
-        
+
         :param num_embeddings: Number of embeddings in the codebook.
         :param embedding_dim: Dimension of each embedding vector.
         :param commitment_cost: Weight for the commitment loss.
@@ -40,12 +40,14 @@ class VectorQuantizer(nn.Module):
 
         # Initialize embeddings with uniform distribution
         self.embeddings = nn.Embedding(self.num_embeddings, self.embedding_dim)
-        self.embeddings.weight.data.uniform_(-1 / self.num_embeddings, 1 / self.num_embeddings)
+        self.embeddings.weight.data.uniform_(
+            -1 / self.num_embeddings, 1 / self.num_embeddings
+        )
 
     def forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass through the Vector Quantizer.
-        
+
         :param inputs: Encoder outputs of shape [batch, embedding_dim, sequence_length]
         :return: Quantized tensor and the quantization loss.
         """
@@ -55,18 +57,22 @@ class VectorQuantizer(nn.Module):
 
         # Calculate distances between encoder outputs and embeddings
         distances = (
-            torch.sum(flat_inputs**2, dim=1, keepdim=True) +
-            torch.sum(self.embeddings.weight**2, dim=1) -
-            2 * torch.matmul(flat_inputs, self.embeddings.weight.t())
+            torch.sum(flat_inputs**2, dim=1, keepdim=True)
+            + torch.sum(self.embeddings.weight**2, dim=1)
+            - 2 * torch.matmul(flat_inputs, self.embeddings.weight.t())
         )
 
         # Encoding indices for minimum distance
         encoding_indices = torch.argmin(distances, dim=1).unsqueeze(1)
-        encodings = torch.zeros(encoding_indices.size(0), self.num_embeddings, device=inputs.device)
+        encodings = torch.zeros(
+            encoding_indices.size(0), self.num_embeddings, device=inputs.device
+        )
         encodings.scatter_(1, encoding_indices, 1)
 
         # Quantize and reshape back to [batch, embedding_dim, sequence_length]
-        quantized = torch.matmul(encodings, self.embeddings.weight).view(batch_size, sequence_length, self.embedding_dim)
+        quantized = torch.matmul(encodings, self.embeddings.weight).view(
+            batch_size, sequence_length, self.embedding_dim
+        )
         quantized = quantized.permute(0, 2, 1).contiguous()
 
         # Calculate losses
@@ -84,7 +90,7 @@ class ResidualBlock(nn.Module):
     def __init__(self, channels: int):
         """
         Initializes a Residual Block.
-        
+
         :param channels: Number of input and output channels.
         """
         super(ResidualBlock, self).__init__()
@@ -93,13 +99,13 @@ class ResidualBlock(nn.Module):
             nn.BatchNorm1d(channels),
             nn.ReLU(inplace=True),
             nn.Conv1d(channels, channels, kernel_size=3, padding=1),
-            nn.BatchNorm1d(channels)
+            nn.BatchNorm1d(channels),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass through the Residual Block.
-        
+
         :param x: Input tensor of shape [batch, channels, sequence_length]
         :return: Output tensor of the same shape.
         """
@@ -107,10 +113,16 @@ class ResidualBlock(nn.Module):
 
 
 class VQVAE(nn.Module):
-    def __init__(self, input_dim: int, embedding_dim: int = 64, num_embeddings: int = 512, commitment_cost: float = 0.25):
+    def __init__(
+        self,
+        input_dim: int,
+        embedding_dim: int = 64,
+        num_embeddings: int = 512,
+        commitment_cost: float = 0.25,
+    ):
         """
         Initializes the VQ-VAE model with a residual encoder and decoder.
-        
+
         :param input_dim: Number of input features (e.g., 5 for ['Open', 'High', 'Low', 'Close', 'Volume']).
         :param embedding_dim: Dimension of the embedding vectors.
         :param num_embeddings: Number of embeddings in the codebook.
@@ -122,17 +134,31 @@ class VQVAE(nn.Module):
 
         # Encoder with Residual Blocks
         self.encoder = nn.Sequential(
-            nn.Conv1d(in_channels=input_dim, out_channels=64, kernel_size=3, stride=1, padding=1),
+            nn.Conv1d(
+                in_channels=input_dim,
+                out_channels=64,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+            ),
             nn.BatchNorm1d(64),
             nn.ReLU(inplace=True),
             ResidualBlock(64),
-            nn.Conv1d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
+            nn.Conv1d(
+                in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1
+            ),
             nn.BatchNorm1d(128),
             nn.ReLU(inplace=True),
             ResidualBlock(128),
-            nn.Conv1d(in_channels=128, out_channels=embedding_dim, kernel_size=3, stride=1, padding=1),
+            nn.Conv1d(
+                in_channels=128,
+                out_channels=embedding_dim,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+            ),
             nn.BatchNorm1d(embedding_dim),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
         )
 
         # Vector Quantizer
@@ -141,22 +167,36 @@ class VQVAE(nn.Module):
         # Decoder with Residual Blocks
         self.decoder = nn.Sequential(
             ResidualBlock(embedding_dim),
-            nn.ConvTranspose1d(in_channels=embedding_dim, out_channels=128, kernel_size=3, stride=1, padding=1),
+            nn.ConvTranspose1d(
+                in_channels=embedding_dim,
+                out_channels=128,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+            ),
             nn.BatchNorm1d(128),
             nn.ReLU(inplace=True),
             ResidualBlock(128),
-            nn.ConvTranspose1d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding=1),
+            nn.ConvTranspose1d(
+                in_channels=128, out_channels=64, kernel_size=3, stride=1, padding=1
+            ),
             nn.BatchNorm1d(64),
             nn.ReLU(inplace=True),
             ResidualBlock(64),
-            nn.Conv1d(in_channels=64, out_channels=input_dim, kernel_size=3, stride=1, padding=1),
-            nn.Sigmoid()  # Assuming input data is normalized between 0 and 1
+            nn.Conv1d(
+                in_channels=64,
+                out_channels=input_dim,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+            ),
+            nn.Sigmoid(),  # Assuming input data is normalized between 0 and 1
         )
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass through the VQ-VAE model.
-        
+
         :param x: Input tensor of shape [batch, input_dim, sequence_length]
         :return: Reconstructed tensor and the quantization loss.
         """
@@ -172,11 +212,11 @@ def train_vqvae(
     val_loader: DataLoader,
     epochs: int = 50,
     lr: float = 1e-3,
-    checkpoint_dir: str = './services/checkpoints'
+    checkpoint_dir: str = "./services/checkpoints",
 ) -> VQVAE:
     """
     Train the VQ-VAE model on given data and save the best checkpoint.
-    
+
     :param model: VQ-VAE model.
     :param train_loader: DataLoader for training data.
     :param val_loader: DataLoader for validation data.
@@ -186,13 +226,15 @@ def train_vqvae(
     :return: Trained VQ-VAE model.
     """
     os.makedirs(checkpoint_dir, exist_ok=True)
-    checkpoint_path = os.path.join(checkpoint_dir, 'vqvae_best.pth')
+    checkpoint_path = os.path.join(checkpoint_dir, "vqvae_best.pth")
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
     criterion = nn.MSELoss()
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, factor=0.5, verbose=True)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, "min", patience=5, factor=0.5, verbose=True
+    )
 
-    best_val_loss = float('inf')
+    best_val_loss = float("inf")
     patience_counter = 0
     patience = 10  # Early stopping patience
 
@@ -208,15 +250,21 @@ def train_vqvae(
 
             # Assert correct shape
             if batch.shape[1] != 5 or batch.shape[2] != 60:
-                logger.error(f"Expected input shape [batch, 5, 60], but got {batch.shape}")
-                raise AssertionError(f"Expected input shape [batch, 5, 60], but got {batch.shape}")
+                logger.error(
+                    f"Expected input shape [batch, 5, 60], but got {batch.shape}"
+                )
+                raise AssertionError(
+                    f"Expected input shape [batch, 5, 60], but got {batch.shape}"
+                )
 
             optimizer.zero_grad()
             recon, vq_loss = model(batch)
             recon_loss = criterion(recon, batch)
             loss = recon_loss + vq_loss
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(
+                model.parameters(), max_norm=1.0
+            )  # Gradient clipping
             optimizer.step()
 
             running_loss += loss.item()
@@ -239,8 +287,12 @@ def train_vqvae(
 
                 # Assert correct shape
                 if batch.shape[1] != 5 or batch.shape[2] != 60:
-                    logger.error(f"Expected input shape [batch, 5, 60], but got {batch.shape}")
-                    raise AssertionError(f"Expected input shape [batch, 5, 60], but got {batch.shape}")
+                    logger.error(
+                        f"Expected input shape [batch, 5, 60], but got {batch.shape}"
+                    )
+                    raise AssertionError(
+                        f"Expected input shape [batch, 5, 60], but got {batch.shape}"
+                    )
 
                 recon, vq_loss = model(batch)
                 recon_loss = criterion(recon, batch)
@@ -254,8 +306,12 @@ def train_vqvae(
         avg_val_vq_loss = val_vq_loss_total / len(val_loader)
         avg_val_recon_loss = val_recon_loss_total / len(val_loader)
 
-        logger.info(f"Epoch [{epoch}/{epochs}], Train Loss: {avg_train_loss:.4f}, Recon Loss: {avg_recon_loss:.4f}, VQ Loss: {avg_vq_loss:.4f}")
-        logger.info(f"Epoch [{epoch}/{epochs}], Val Loss: {avg_val_loss:.4f}, Recon Loss: {avg_val_recon_loss:.4f}, VQ Loss: {avg_val_vq_loss:.4f}")
+        logger.info(
+            f"Epoch [{epoch}/{epochs}], Train Loss: {avg_train_loss:.4f}, Recon Loss: {avg_recon_loss:.4f}, VQ Loss: {avg_vq_loss:.4f}"
+        )
+        logger.info(
+            f"Epoch [{epoch}/{epochs}], Val Loss: {avg_val_loss:.4f}, Recon Loss: {avg_val_recon_loss:.4f}, VQ Loss: {avg_val_vq_loss:.4f}"
+        )
 
         # Scheduler step
         scheduler.step(avg_val_loss)
@@ -264,16 +320,23 @@ def train_vqvae(
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             patience_counter = 0
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': avg_val_loss,
-            }, checkpoint_path)
-            logger.info(f"Best model saved at epoch {epoch} with validation loss {avg_val_loss:.4f}")
+            torch.save(
+                {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "loss": avg_val_loss,
+                },
+                checkpoint_path,
+            )
+            logger.info(
+                f"Best model saved at epoch {epoch} with validation loss {avg_val_loss:.4f}"
+            )
         else:
             patience_counter += 1
-            logger.info(f"No improvement in validation loss for {patience_counter} epoch(s).")
+            logger.info(
+                f"No improvement in validation loss for {patience_counter} epoch(s)."
+            )
             if patience_counter >= patience:
                 logger.info("Early stopping triggered.")
                 break
@@ -283,14 +346,11 @@ def train_vqvae(
 
 
 def detect_anomalies(
-    model: VQVAE,
-    data: torch.Tensor,
-    threshold: float = 0.05,
-    batch_size: int = 32
+    model: VQVAE, data: torch.Tensor, threshold: float = 0.05, batch_size: int = 32
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Detect anomalies in data using reconstruction error.
-    
+
     :param model: Trained VQ-VAE model.
     :param data: Data to check for anomalies (Tensor of shape [batch_size, feature_dim, sequence_length]).
     :param threshold: Threshold for anomaly detection based on reconstruction error.
@@ -303,7 +363,7 @@ def detect_anomalies(
 
     with torch.no_grad():
         for i in tqdm(range(0, data.size(0), batch_size), desc="Detecting Anomalies"):
-            batch = data[i:i+batch_size].to(device)
+            batch = data[i : i + batch_size].to(device)
             recon, _ = model(batch)
             # Move tensors to CPU and convert to numpy
             recon = recon.cpu().numpy()
@@ -321,7 +381,7 @@ def detect_anomalies(
 def get_stock_data(symbol: str, start: str, end: str) -> pd.DataFrame:
     """
     Fetch stock data from Yahoo Finance.
-    
+
     :param symbol: Stock symbol.
     :param start: Start date in 'YYYY-MM-DD' format.
     :param end: End date in 'YYYY-MM-DD' format.
@@ -335,21 +395,21 @@ def get_stock_data(symbol: str, start: str, end: str) -> pd.DataFrame:
 
 
 def prepare_model(
-    checkpoint_dir: str = './services/checkpoints',
-    symbol: str = 'AAPL',
-    data_start_date: str = '2014-01-01',
-    data_end_date: str = '2024-01-01'
+    checkpoint_dir: str = "./services/checkpoints",
+    symbol: str = "AAPL",
+    data_start_date: str = "2014-01-01",
+    data_end_date: str = "2024-01-01",
 ) -> Tuple[VQVAE, MinMaxScaler]:
     """
     Prepare the VQ-VAE model by loading existing weights or training a new model.
-    
+
     :param checkpoint_dir: Directory where checkpoints are stored.
     :param symbol: Stock symbol for training or scaler fitting.
     :param data_start_date: Start date for training data.
     :param data_end_date: End date for training data.
     :return: Tuple containing the model and the scaler used for data preprocessing.
     """
-    checkpoint_path = os.path.join(checkpoint_dir, 'vqvae_best.pth')
+    checkpoint_path = os.path.join(checkpoint_dir, "vqvae_best.pth")
     input_shape = (5, 60)  # feature_dim=5, sequence_length=60
 
     if os.path.exists(checkpoint_path):
@@ -358,21 +418,25 @@ def prepare_model(
             input_dim=input_shape[0],
             embedding_dim=64,
             num_embeddings=512,
-            commitment_cost=0.25
+            commitment_cost=0.25,
         ).to(device)
         checkpoint = torch.load(checkpoint_path, map_location=device)
-        model.load_state_dict(checkpoint['model_state_dict'])
+        model.load_state_dict(checkpoint["model_state_dict"])
         logger.info(f"Loaded VQ-VAE model from {checkpoint_path}")
 
         # Load scaler
-        scaler_path = os.path.join(checkpoint_dir, 'scaler.save')
+        scaler_path = os.path.join(checkpoint_dir, "scaler.save")
         if os.path.exists(scaler_path):
             scaler = joblib.load(scaler_path)
             logger.info("Loaded scaler for data preprocessing.")
         else:
-            logger.warning("Scaler not found. Please ensure scaler is saved during training.")
+            logger.warning(
+                "Scaler not found. Please ensure scaler is saved during training."
+            )
             # Refit scaler if not found
-            data = get_stock_data(symbol=symbol, start=data_start_date, end=data_end_date)
+            data = get_stock_data(
+                symbol=symbol, start=data_start_date, end=data_end_date
+            )
             if data.empty:
                 raise ValueError("Failed to fetch stock data for scaler fitting.")
             _, scaler = preprocess_data(data, sequence_length=60)
@@ -389,7 +453,7 @@ def prepare_model(
 
         # Save scaler
         os.makedirs(checkpoint_dir, exist_ok=True)
-        scaler_path = os.path.join(checkpoint_dir, 'scaler.save')
+        scaler_path = os.path.join(checkpoint_dir, "scaler.save")
         joblib.dump(scaler, scaler_path)
         logger.info(f"Scaler saved at {scaler_path}")
 
@@ -413,7 +477,7 @@ def prepare_model(
             input_dim=input_shape[0],
             embedding_dim=64,
             num_embeddings=512,
-            commitment_cost=0.25
+            commitment_cost=0.25,
         ).to(device)
         logger.info("VQ-VAE model built successfully.")
 
@@ -424,7 +488,7 @@ def prepare_model(
             val_loader,
             epochs=50,
             lr=1e-3,
-            checkpoint_dir=checkpoint_dir
+            checkpoint_dir=checkpoint_dir,
         )
 
     return model, scaler

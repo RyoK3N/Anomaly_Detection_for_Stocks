@@ -1,9 +1,10 @@
 # ./services/data_loader.py
 
-import yfinance as yf
-import pandas as pd
 import asyncio
-import time
+
+import pandas as pd
+import yfinance as yf
+
 
 # Function to load real-time stock data from Yahoo Finance
 def load_real_time_data(symbol: str, start: str, end: str) -> pd.DataFrame:
@@ -27,6 +28,7 @@ def load_real_time_data(symbol: str, start: str, end: str) -> pd.DataFrame:
         print(f"Error fetching data: {e}")
         return pd.DataFrame()
     return hist
+
 
 # Function to stream data asynchronously
 async def stream_data(symbol: str, interval: int = 60, iterations: int = 5):

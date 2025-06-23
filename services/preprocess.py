@@ -1,34 +1,50 @@
 # ./services/data_loader.py
 
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import MinMaxScaler
+"""Data preprocessing utilities."""
+
+from __future__ import annotations
+
 from typing import Tuple
-from technical_indicators import add_indicators
+
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+
+from .technical_indicators import add_indicators
+
 
 # Function to preprocess stock data for anomaly detection model
-def preprocess_data(data: pd.DataFrame, sequence_length: int) -> Tuple[np.ndarray, MinMaxScaler]:
-    """
-    Cleans, scales, and creates input sequences from raw stock data.
-    
-    :param data: DataFrame containing raw stock data (e.g., 'Open', 'High', 'Low', 'Close', 'Volume').
-    :param sequence_length: Number of time steps in each input sequence.
-    :return: Tuple containing numpy array of sequences and the MinMaxScaler object.
-    
-    :usage:
-           from app/services/preprocess.py import preprocess_data
-           sequences, scaler = preprocess_data(data, 60)
+def preprocess_data(
+    data: pd.DataFrame, sequence_length: int
+) -> Tuple[np.ndarray, MinMaxScaler]:
+    """Return normalized sliding windows with technical indicators.
+
+    Args:
+        data: Raw OHLCV dataframe.
+        sequence_length: Number of timesteps per sequence.
+
+    Returns:
+        Tuple of ``np.ndarray`` of shape ``(n, sequence_length, 8)`` and the scaler used.
     """
 
-    data_with_indicators = add_indicators(data)
-    feature_cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'MA20', 'MA50', 'RSI']
-    data_cleaned = data_with_indicators[feature_cols].dropna()
+    features = add_indicators(data)
+    feature_cols = [
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+        "MA20",
+        "MA50",
+        "RSI",
+    ]
+    cleaned = features[feature_cols].dropna()
     scaler = MinMaxScaler()
-    scaled_data = scaler.fit_transform(data_cleaned)
-    sequences = []
-    for i in range(len(scaled_data) - sequence_length):
-        sequences.append(scaled_data[i:i + sequence_length])
+    scaled = scaler.fit_transform(cleaned)
 
+    sequences = [
+        scaled[i : i + sequence_length] for i in range(len(scaled) - sequence_length)
+    ]
     return np.array(sequences), scaler
 
 
@@ -36,34 +52,33 @@ def preprocess_data(data: pd.DataFrame, sequence_length: int) -> Tuple[np.ndarra
 def scale_data(data: pd.DataFrame) -> MinMaxScaler:
     """
     Scales the stock data using MinMaxScaler.
-    
+
     :param data: DataFrame containing raw stock data.
     :return: MinMaxScaler object used to scale the data.
-    
+
     :usage:
            from app/services/preprocess.py import scale_data
            scaler = scale_data(data)
     """
-    data_with_indicators = add_indicators(data)
-    feature_cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'MA20', 'MA50', 'RSI']
-    data_cleaned = data_with_indicators[feature_cols].dropna()
+    enriched = add_indicators(data)
+    feature_cols = [
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+        "MA20",
+        "MA50",
+        "RSI",
+    ]
+    cleaned = enriched[feature_cols].dropna()
     scaler = MinMaxScaler()
-    scaler.fit(data_cleaned)
-
+    scaler.fit(cleaned)
     return scaler
 
 
 # Function to inverse scale data (after prediction for interpretation)
 def inverse_scale(scaled_data: np.ndarray, scaler: MinMaxScaler) -> np.ndarray:
-    """
-    Reverses the scaling applied to the stock data, to retrieve original values.
-    
-    :param scaled_data: Scaled data to be inversely transformed.
-    :param scaler: MinMaxScaler object that was used for scaling.
-    :return: Data in original scale.
-    
-    :usage:
-           from app/services/preprocess.py import inverse_scale
-           original_data = inverse_scale(scaled_data, scaler)
-    """
+    """Inverse transform ``scaled_data`` back to the original scale."""
+
     return scaler.inverse_transform(scaled_data)

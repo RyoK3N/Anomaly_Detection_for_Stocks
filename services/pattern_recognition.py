@@ -1,10 +1,10 @@
 # ./services/pattern_recognition.py
 
-import pandas as pd
-import numpy as np
-from typing import List
 import logging
+
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import seaborn as sns
 
 # Configure logging
@@ -21,16 +21,16 @@ def classify_pattern(df: pd.DataFrame) -> pd.DataFrame:
     """
     patterns = []
     for i in range(len(df)):
-        if df.iloc[i]['Anomaly']:
+        if df.iloc[i]["Anomaly"]:
             pattern = identify_bullish_patterns(df, i)
             if not pattern:
                 pattern = identify_bearish_patterns(df, i)
             if not pattern:
-                pattern = 'Unknown'
+                pattern = "Unknown"
             patterns.append(pattern)
         else:
-            patterns.append('Normal')
-    df['Pattern'] = patterns
+            patterns.append("Normal")
+    df["Pattern"] = patterns
     return df
 
 
@@ -44,17 +44,17 @@ def identify_bullish_patterns(df: pd.DataFrame, anomaly_idx: int) -> str:
     """
     window = 30  # e.g., 30 data points before the anomaly
     if anomaly_idx < window:
-        return ''
+        return ""
 
-    window_data = df.iloc[anomaly_idx - window:anomaly_idx]
+    window_data = df.iloc[anomaly_idx - window : anomaly_idx]
 
     # Detect if there's an uptrend in reconstruction error
-    trend = window_data['Reconstruction_Error'].values
+    trend = window_data["Reconstruction_Error"].values
     slope = np.polyfit(range(len(trend)), trend, 1)[0]
     if slope > 0.0005:
-        return 'Bullish Flag'
+        return "Bullish Flag"
 
-    return ''
+    return ""
 
 
 def identify_bearish_patterns(df: pd.DataFrame, anomaly_idx: int) -> str:
@@ -67,17 +67,17 @@ def identify_bearish_patterns(df: pd.DataFrame, anomaly_idx: int) -> str:
     """
     window = 30  # e.g., 30 data points before the anomaly
     if anomaly_idx < window:
-        return ''
+        return ""
 
-    window_data = df.iloc[anomaly_idx - window:anomaly_idx]
+    window_data = df.iloc[anomaly_idx - window : anomaly_idx]
 
     # Detect if there's a downtrend in reconstruction error
-    trend = window_data['Reconstruction_Error'].values
+    trend = window_data["Reconstruction_Error"].values
     slope = np.polyfit(range(len(trend)), trend, 1)[0]
     if slope < -0.0005:
-        return 'Bearish Pennant'
+        return "Bearish Pennant"
 
-    return ''
+    return ""
 
 
 def visualize_anomalies(df: pd.DataFrame, symbol: str, output_path: str):
@@ -89,23 +89,36 @@ def visualize_anomalies(df: pd.DataFrame, symbol: str, output_path: str):
     :param output_path: Path to save the visualization.
     """
     plt.figure(figsize=(14, 7))
-    
+
     # Plot Reconstruction Error
-    sns.lineplot(x=df.index, y='Reconstruction_Error', data=df, label='Reconstruction Error')
-    
+    sns.lineplot(
+        x=df.index, y="Reconstruction_Error", data=df, label="Reconstruction Error"
+    )
+
     # Highlight anomalies
-    anomalies = df[df['Anomaly'] == True]
-    plt.scatter(anomalies.index, anomalies['Reconstruction_Error'], color='red', label='Anomalies')
-    
+    anomalies = df[df["Anomaly"]]
+    plt.scatter(
+        anomalies.index,
+        anomalies["Reconstruction_Error"],
+        color="red",
+        label="Anomalies",
+    )
+
     # Annotate patterns
     for idx, row in anomalies.iterrows():
-        if row['Pattern'] not in ['Unknown', 'Normal']:
-            plt.annotate(row['Pattern'], (idx, row['Reconstruction_Error']),
-                         textcoords="offset points", xytext=(0,10), ha='center', color='purple')
-    
-    plt.title(f'Anomaly Detection and Pattern Classification for {symbol}')
-    plt.xlabel('Timestamp')
-    plt.ylabel('Reconstruction Error')
+        if row["Pattern"] not in ["Unknown", "Normal"]:
+            plt.annotate(
+                row["Pattern"],
+                (idx, row["Reconstruction_Error"]),
+                textcoords="offset points",
+                xytext=(0, 10),
+                ha="center",
+                color="purple",
+            )
+
+    plt.title(f"Anomaly Detection and Pattern Classification for {symbol}")
+    plt.xlabel("Timestamp")
+    plt.ylabel("Reconstruction Error")
     plt.legend()
     plt.tight_layout()
     plt.savefig(output_path)
@@ -122,11 +135,11 @@ def categorize_trading_patterns(df: pd.DataFrame) -> pd.DataFrame:
     """
     categories = []
     for idx, row in df.iterrows():
-        if row['Pattern'].startswith('Bullish'):
-            categories.append('Bullish')
-        elif row['Pattern'].startswith('Bearish'):
-            categories.append('Bearish')
+        if row["Pattern"].startswith("Bullish"):
+            categories.append("Bullish")
+        elif row["Pattern"].startswith("Bearish"):
+            categories.append("Bearish")
         else:
-            categories.append('Normal')
-    df['Category'] = categories
+            categories.append("Normal")
+    df["Category"] = categories
     return df

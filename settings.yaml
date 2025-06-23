@@ -1,0 +1,4 @@
+symbol: AAPL
+interval: 5m
+sequence_length: 60
+prediction_steps: 10

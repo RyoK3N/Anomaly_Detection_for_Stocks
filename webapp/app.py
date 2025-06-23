@@ -1,14 +1,14 @@
-import asyncio
-from datetime import datetime, time as dtime
+from datetime import datetime
+from datetime import time as dtime
 
-from flask import Flask, jsonify
 import pandas as pd
 import torch
 import yfinance as yf
+from flask import Flask, jsonify
 
 from services.preprocess import preprocess_data
-from services.wavenet_model import WaveNet, load_wavenet
 from services.rl_trainer import rl_update
+from services.wavenet_model import load_wavenet
 
 app = Flask(__name__)
 
@@ -42,7 +42,9 @@ async def predict_and_update():
     if df.empty:
         return {"message": "No data"}
     sequences, scaler = preprocess_data(df, SEQ_LENGTH)
-    tensor = torch.tensor(sequences, dtype=torch.float32).permute(0, 2, 1).to(model.device)
+    tensor = (
+        torch.tensor(sequences, dtype=torch.float32).permute(0, 2, 1).to(model.device)
+    )
     with torch.no_grad():
         pred = model(tensor)
     # RL update will run for 10 steps asynchronously
