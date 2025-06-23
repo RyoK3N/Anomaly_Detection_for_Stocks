@@ -1,23 +1,27 @@
 # ./services/evaluate.py
 
-import os
 import argparse
 import logging
-import torch
+import os
+from typing import Tuple
+
 import numpy as np
 import pandas as pd
-from typing import Tuple
-from sklearn.preprocessing import MinMaxScaler
-import joblib
+import torch
 from tqdm import tqdm
 
+from .data_loader import load_real_time_data
+
 # Import the VQVAE model and prepare_model function
-from model import VQVAE, prepare_model
-from preprocess import preprocess_data
-from data_loader import load_real_time_data
+from .model import VQVAE, prepare_model
 
 # Import pattern recognition functions
-from pattern_recognition import classify_pattern, visualize_anomalies, categorize_trading_patterns
+from .pattern_recognition import (
+    categorize_trading_patterns,
+    classify_pattern,
+    visualize_anomalies,
+)
+from .preprocess import preprocess_data
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -41,7 +45,7 @@ def detect_anomalies(
     data: torch.Tensor,
     device: torch.device,
     threshold: float,
-    batch_size: int
+    batch_size: int,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Detects anomalies in the data using the trained VQ-VAE model.
@@ -54,14 +58,14 @@ def detect_anomalies(
     :return: Tuple of (anomalies array, reconstruction errors array)
     """
     model.eval()
-    anomalies = []
-    recon_errors = []
+    anomalies: list[bool] = []
+    recon_errors: list[float] = []
 
     with torch.no_grad():
         for i in tqdm(range(0, data.size(0), batch_size), desc="Detecting Anomalies"):
-            batch = data[i:i + batch_size].to(device)
+            batch = data[i : i + batch_size].to(device)
             recon, _ = model(batch)
-        
+
             recon = recon.cpu().numpy()
             batch = batch.cpu().numpy()
             # Calculate MSE for each sample in the batch
@@ -97,7 +101,7 @@ def save_results(
     df_original: pd.DataFrame,
     recon_errors: np.ndarray,
     anomalies: np.ndarray,
-    sequence_length: int
+    sequence_length: int,
 ):
     """
     Saves the reconstruction errors and anomaly flags to a CSV file, along with the original timestamps.
@@ -113,13 +117,17 @@ def save_results(
         logger.error("Original data length is less than sequence_length.")
         raise ValueError("Original data length is less than sequence_length.")
 
-    timestamps = df_original.index[sequence_length:].tolist()  # sequence_length = window size
-    results = pd.DataFrame({
-        'Timestamp': timestamps,
-        'Reconstruction_Error': recon_errors,
-        'Anomaly': anomalies
-    })
-    results.set_index('Timestamp', inplace=True)
+    timestamps = df_original.index[
+        sequence_length:
+    ].tolist()  # sequence_length = window size
+    results = pd.DataFrame(
+        {
+            "Timestamp": timestamps,
+            "Reconstruction_Error": recon_errors,
+            "Anomaly": anomalies,
+        }
+    )
+    results.set_index("Timestamp", inplace=True)
 
     # Ensure the output directory exists
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -138,7 +146,7 @@ def main(args):
         checkpoint_dir=args.checkpoint_dir,
         symbol=args.symbol,
         data_start_date=args.train_start,
-        data_end_date=args.train_end
+        data_end_date=args.train_end,
     )
     model.to(device)
 
@@ -162,11 +170,7 @@ def main(args):
     # Detect anomalies
     logger.info("Starting anomaly detection on new data.")
     anomalies, recon_errors = detect_anomalies(
-        model,
-        sequences_tensor,
-        device,
-        args.threshold,
-        args.batch_size
+        model, sequences_tensor, device, args.threshold, args.batch_size
     )
     logger.info("Anomaly detection on new data completed.")
 
@@ -177,11 +181,13 @@ def main(args):
         new_data_df,
         recon_errors,
         anomalies,
-        sequence_length=args.sequence_length
+        sequence_length=args.sequence_length,
     )
 
     # Load the saved results
-    results_df = pd.read_csv(args.output_path, parse_dates=['Timestamp'], index_col='Timestamp')
+    results_df = pd.read_csv(
+        args.output_path, parse_dates=["Timestamp"], index_col="Timestamp"
+    )
 
     # Classify patterns
     logger.info("Classifying detected anomalies into trading patterns.")
@@ -191,12 +197,16 @@ def main(args):
     results_df = categorize_trading_patterns(results_df)
 
     # Save updated results with patterns
-    results_with_patterns_path = os.path.splitext(args.output_path)[0] + '_with_patterns.csv'
+    results_with_patterns_path = (
+        os.path.splitext(args.output_path)[0] + "_with_patterns.csv"
+    )
     results_df.to_csv(results_with_patterns_path)
-    logger.info(f"Saved evaluation results with patterns to {results_with_patterns_path}")
+    logger.info(
+        f"Saved evaluation results with patterns to {results_with_patterns_path}"
+    )
 
     # Visualize anomalies and patterns
-    visualization_path = os.path.splitext(args.output_path)[0] + '_visualization.png'
+    visualization_path = os.path.splitext(args.output_path)[0] + "_visualization.png"
     visualize_anomalies(results_df, args.symbol, visualization_path)
 
     logger.info("Evaluation process finished successfully.")
@@ -208,17 +218,64 @@ if __name__ == "__main__":
     )
 
     # Required arguments
-    parser.add_argument('--symbol', type=str, required=True, help='Stock symbol to evaluate (e.g., AAPL)')
-    parser.add_argument('--start', type=str, required=True, help='Start date for evaluation data in YYYY-MM-DD format')
-    parser.add_argument('--end', type=str, required=True, help='End date for evaluation data in YYYY-MM-DD format')
-    parser.add_argument('--output_path', type=str, required=True, help='Path to save the evaluation results CSV')
-    parser.add_argument('--train_start', type=str, default='2014-01-01', help='Start date for training data used in scaler fitting')
-    parser.add_argument('--train_end', type=str, default='2024-01-01', help='End date for training data used in scaler fitting')
+    parser.add_argument(
+        "--symbol",
+        type=str,
+        required=True,
+        help="Stock symbol to evaluate (e.g., AAPL)",
+    )
+    parser.add_argument(
+        "--start",
+        type=str,
+        required=True,
+        help="Start date for evaluation data in YYYY-MM-DD format",
+    )
+    parser.add_argument(
+        "--end",
+        type=str,
+        required=True,
+        help="End date for evaluation data in YYYY-MM-DD format",
+    )
+    parser.add_argument(
+        "--output_path",
+        type=str,
+        required=True,
+        help="Path to save the evaluation results CSV",
+    )
+    parser.add_argument(
+        "--train_start",
+        type=str,
+        default="2014-01-01",
+        help="Start date for training data used in scaler fitting",
+    )
+    parser.add_argument(
+        "--train_end",
+        type=str,
+        default="2024-01-01",
+        help="End date for training data used in scaler fitting",
+    )
     # Kwargs arguments
-    parser.add_argument('--checkpoint_dir', type=str, default='./services/checkpoints', help='Directory containing model checkpoints and scaler')
-    parser.add_argument('--threshold', type=float, default=0.05, help='Threshold for anomaly detection based on MSE')
-    parser.add_argument('--sequence_length', type=int, default=60, help='Number of time steps in each input sequence')
-    parser.add_argument('--batch_size', type=int, default=32, help='Batch size for processing data')
+    parser.add_argument(
+        "--checkpoint_dir",
+        type=str,
+        default="./services/checkpoints",
+        help="Directory containing model checkpoints and scaler",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.05,
+        help="Threshold for anomaly detection based on MSE",
+    )
+    parser.add_argument(
+        "--sequence_length",
+        type=int,
+        default=60,
+        help="Number of time steps in each input sequence",
+    )
+    parser.add_argument(
+        "--batch_size", type=int, default=32, help="Batch size for processing data"
+    )
 
     args = parser.parse_args()
 
