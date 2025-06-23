@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 from typing import Tuple
+from technical_indicators import add_indicators
 
 # Function to preprocess stock data for anomaly detection model
 def preprocess_data(data: pd.DataFrame, sequence_length: int) -> Tuple[np.ndarray, MinMaxScaler]:
@@ -19,7 +20,9 @@ def preprocess_data(data: pd.DataFrame, sequence_length: int) -> Tuple[np.ndarra
            sequences, scaler = preprocess_data(data, 60)
     """
 
-    data_cleaned = data[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
+    data_with_indicators = add_indicators(data)
+    feature_cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'MA20', 'MA50', 'RSI']
+    data_cleaned = data_with_indicators[feature_cols].dropna()
     scaler = MinMaxScaler()
     scaled_data = scaler.fit_transform(data_cleaned)
     sequences = []
@@ -41,7 +44,9 @@ def scale_data(data: pd.DataFrame) -> MinMaxScaler:
            from app/services/preprocess.py import scale_data
            scaler = scale_data(data)
     """
-    data_cleaned = data[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
+    data_with_indicators = add_indicators(data)
+    feature_cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'MA20', 'MA50', 'RSI']
+    data_cleaned = data_with_indicators[feature_cols].dropna()
     scaler = MinMaxScaler()
     scaler.fit(data_cleaned)
 
